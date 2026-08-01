@@ -227,6 +227,12 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 			return
 		}
 
+		// firstPkt holds the packet that triggered reconnection so the pump
+		// goroutine can send it immediately after the tunnel is established,
+		// rather than dropping it and waiting for a retransmit.
+		var firstPkt []byte
+		var firstPktN int
+
 		if !cfg.AlwaysReconnect {
 			log.Println("Tunnel idle. Waiting for outbound activity before reconnecting...")
 			buf := packetBufferPool.Get()
@@ -239,8 +245,9 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 				}
 				continue
 			}
-			packetBufferPool.Put(buf)
 			log.Printf("Detected outbound activity (%d bytes). Reconnecting...", n)
+			firstPkt = buf
+			firstPktN = n
 		}
 
 		log.Printf("Establishing MASQUE connection to %s", cfg.Endpoint)
@@ -254,6 +261,10 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 		)
 		if err != nil {
 			log.Printf("Failed to connect tunnel: %v", err)
+			if firstPkt != nil {
+				packetBufferPool.Put(firstPkt)
+				firstPkt = nil
+			}
 			if ipConn != nil {
 				_ = ipConn.Close()
 			}
@@ -270,6 +281,10 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 		}
 		if rsp.StatusCode != 200 {
 			log.Printf("Tunnel connection failed: %s", rsp.Status)
+			if firstPkt != nil {
+				packetBufferPool.Put(firstPkt)
+				firstPkt = nil
+			}
 			_ = ipConn.Close()
 			if tr != nil {
 				_ = tr.Close()
@@ -299,8 +314,31 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 
 		wg.Add(2)
 
-		go func() {
+		go func(firstPkt []byte, firstPktN int) {
 			defer wg.Done()
+
+			// If a packet triggered the reconnect, send it now before entering
+			// the normal read loop so it is not lost to a TCP retransmit timeout.
+			if firstPkt != nil {
+				icmp, err := ipConn.WritePacket(firstPkt[:firstPktN])
+				packetBufferPool.Put(firstPkt)
+				if err != nil {
+					if errors.As(err, new(*connectip.CloseError)) {
+						errChan <- fmt.Errorf("connection closed while writing first packet to IP connection: %w", err)
+						return
+					}
+					log.Printf("Error writing first packet to IP connection: %v, continuing...", err)
+				} else if len(icmp) > 0 {
+					if err := cfg.Device.WritePacket(icmp); err != nil {
+						if errors.As(err, new(*connectip.CloseError)) {
+							errChan <- fmt.Errorf("connection closed while writing ICMP to TUN device: %w", err)
+							return
+						}
+						log.Printf("Error writing ICMP to TUN device: %v, continuing...", err)
+					}
+				}
+			}
+
 			for {
 				if pumpCtx.Err() != nil {
 					return
@@ -340,7 +378,7 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 					}
 				}
 			}
-		}()
+		}(firstPkt, firstPktN)
 
 		go func() {
 			defer wg.Done()
