@@ -126,3 +126,7 @@ gvisor.dev/gvisor v0.0.0-20260616165937-8e4bc62602eb h1:TJ8BuwC+RUuKZgRETtxPjRk8
 gvisor.dev/gvisor v0.0.0-20260616165937-8e4bc62602eb/go.mod h1:8aLQqUBHDH8fY5y60lzmwDpMMbQCcT3EBfoSwhfaGCY=
 gvisor.dev/gvisor v0.0.0-20260616180030-d0704584a116 h1:c5Z2VBmAsWhqjDGlNTR0T95QvOkHdcMMkwZRA1dqlGM=
 gvisor.dev/gvisor v0.0.0-20260616180030-d0704584a116/go.mod h1:8aLQqUBHDH8fY5y60lzmwDpMMbQCcT3EBfoSwhfaGCY=
+github.com/apernet/hysteria/core/v2 v2.8.1 h1:66HiBJfN2fgPKJ0Jvtuj8WK7jI1gc9k3QeNIFMLpfps=
+github.com/apernet/hysteria/core/v2 v2.8.1/go.mod h1:N0bgh7zqnapz/YWg3xqN2L72gAptIn7N16JHB1PYxGo=
+github.com/apernet/quic-go v0.59.1-0.20260330051153-c402ee641eb6 h1:cbF95uMsQwCwAzH2i8+2lNO2TReoELLuqeeMfyBjFbY=
+github.com/apernet/quic-go v0.59.1-0.20260330051153-c402ee641eb6/go.mod h1:Npbg8qBtAZlsAB3FWmqwlVh5jtVG6a4DlYsOylUpvzA=

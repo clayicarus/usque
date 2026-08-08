@@ -2,7 +2,7 @@
 
 🥚➡️🍏🍎
 
-Usque is an open-source reimplementation of the Cloudflare WARP client's MASQUE mode. It leverages the [Connect-IP (RFC 9484)](https://datatracker.ietf.org/doc/rfc9484/) protocol and comes with many operation modes including a native tunnel, SOCKS5 and HTTP proxies, and faster TCP-only L4 proxy variants.
+Usque is an open-source reimplementation of the Cloudflare WARP client's MASQUE mode. It leverages the [Connect-IP (RFC 9484)](https://datatracker.ietf.org/doc/rfc9484/) protocol and comes with many operation modes including a native tunnel, SOCKS5 and HTTP proxies, a Hysteria2 server, and faster TCP-only L4 proxy variants.
 
 ## Table of Contents
 
@@ -21,6 +21,7 @@ Usque is an open-source reimplementation of the Cloudflare WARP client's MASQUE 
       - [Routes on Windows](#routes-on-windows)
     - [SOCKS5 Proxy Mode (easy, cross-platform)](#socks5-proxy-mode-easy-cross-platform)
     - [HTTP Proxy Mode (easy, cross-platform)](#http-proxy-mode-easy-cross-platform)
+    - [Hysteria2 Proxy Mode (easy, cross-platform)](#hysteria2-proxy-mode-easy-cross-platform)
     - [L4 Proxy Modes (easy, cross-platform)](#l4-proxy-modes-easy-cross-platform)
     - [Port Forwarding Mode (for Advanced Users, cross-platform)](#port-forwarding-mode-for-advanced-users-cross-platform)
     - [Connect/Disconnect Hooks](#connectdisconnect-hooks)
@@ -101,6 +102,7 @@ Available Commands:
   enroll        Enrolls a MASQUE private key and switches mode
   help          Help about any command
   http-proxy    Expose Warp as an HTTP proxy with CONNECT support
+  hysteria2     Expose Warp as a Hysteria2 proxy server
   l4-http-proxy Expose Warp as an L4 TCP-only HTTP proxy with CONNECT support
   l4-socks      Expose Warp as an L4 TCP-only SOCKS5 proxy
   nativetun     Expose Warp as a native TUN device
@@ -321,6 +323,52 @@ curl -x http://myuser:mypass@localhost:8080 https://cloudflare.com/cdn-cgi/trace
 > [!NOTE]
 > For now only one `user:pass` is supported.
 
+### Hysteria2 Proxy Mode (easy, cross-platform)
+
+This mode exposes the WARP tunnel as a Hysteria2 server over QUIC. It supports TCP proxying and, unless disabled with `--udp=false`, UDP relay. Standard Hysteria2 clients such as sing-box and Clash.Meta can use it directly. Like the SOCKS5 and HTTP modes, it uses a user-space network stack and does not need root privileges.
+
+The server requires a TLS certificate whose names match the hostname used by clients, plus a non-empty Hysteria2 password. Port `443` is the default; make sure the corresponding **UDP** port is reachable through your firewall and any NAT in front of the server.
+
+```shell
+$ ./usque hysteria2 \
+    --listen :443 \
+    --password 'replace-with-a-strong-password' \
+    --tls-cert /etc/letsencrypt/live/hy2.example.com/fullchain.pem \
+    --tls-key /etc/letsencrypt/live/hy2.example.com/privkey.pem
+```
+
+For a development-only self-signed certificate, clients must be configured to skip certificate verification. Do not use that setting for a public deployment. Add `--udp=false` when clients only need TCP proxying.
+
+Example sing-box outbound:
+
+```json
+{
+  "type": "hysteria2",
+  "tag": "usque-warp",
+  "server": "hy2.example.com",
+  "server_port": 443,
+  "password": "replace-with-a-strong-password",
+  "tls": {
+    "server_name": "hy2.example.com"
+  }
+}
+```
+
+Example Clash.Meta proxy:
+
+```yaml
+proxies:
+  - name: usque-warp
+    type: hysteria2
+    server: hy2.example.com
+    port: 443
+    password: replace-with-a-strong-password
+    sni: hy2.example.com
+    skip-cert-verify: false
+```
+
+`--masquerade` enables a small HTML response for non-authenticated HTTP/3 requests; without it, those requests receive `404 Not Found`. This does not change proxy authentication.
+
 ### L4 Proxy Modes (easy, cross-platform)
 
 If your clients are fine with TCP only proxying, the L4 modes are the lighter option. They use direct HTTP/3 CONNECT streams, skip UDP/datagram handling, and avoid the extra user-space networking stack that the full SOCKS5 and HTTP proxy modes need. They are cross-platform and do not require elevated privileges.
@@ -382,7 +430,7 @@ Hooks run **fire-and-forget** in the background, so a hung hook cannot stall the
 The hook subprocess inherits the parent environment (so `PATH`, `HOME`, etc. work normally) plus the following `USQUE_*` variables:
 
 - `USQUE_EVENT`: `connect` or `disconnect`.
-- `USQUE_MODE`: `nativetun`, `socks`, `http-proxy`, `l4-socks`, `l4-http-proxy`, or `portfw`.
+- `USQUE_MODE`: `nativetun`, `socks`, `http-proxy`, `hysteria2`, `l4-socks`, `l4-http-proxy`, or `portfw`.
 - `USQUE_IFACE`: tun interface name (only set in `nativetun` mode).
 - `USQUE_IPV4`: internal IPv4 from the config.
 - `USQUE_IPV6`: internal IPv6 from the config.
